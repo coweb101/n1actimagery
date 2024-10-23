@@ -1,0 +1,283 @@
+---
+title: "N1ACTIMAGERY_SPR_analyses"
+author: "Constanze Weber"
+date: "10/2024"
+output: 
+  html_document:
+  theme: cerulean
+toc: true
+toc_float: true
+code_folding: hide
+number_sections: true
+---
+
+  
+```{r echo=FALSE, include=FALSE}
+
+# load packages
+library(lmerTest) # for lme analysis (automatically loads lme4)
+library(ggeffects) # for follow-up tests
+
+options(width=500, scipen=6, digits=8)
+
+# to display more digit when using probe_interactions:
+options("jtools-digits" = 3)
+
+set.seed(17)
+
+```
+
+<style type="text/css">
+  body{
+    font-size: 12pt;
+  }
+</style>
+  
+This file documents statistical analyses reported in the talk **COMPARING SENSORY ATTENUATION IN ACTION EXECUTION, IMAGERY, AND OBSERVATION – A PREREGISTERED ERP STUDY**. 48 subjects participated in the study (of which 45 were included in the following analysis; three participants were excluded based on EEG data quality); each subject underwent a total of 100 trials of each motor-related sound condition as well as the cued external sound condition. The (uncued) external sound condition was administered twice such that each participant underwent a total of 200 trials of this condition (once at the beginning and once in the middle of the experiment). The motor-related sound conditions and the cued external sound conditions were once administered with sounds and once without (Control). As is standard in the contingent paradigm (Horvath, 2015), difference waves are constructed between these conditions (i.e. the corresponding sound and no-sound conditions). In the following script, amplitude data is analyzed that already underwent these aggregation steps. 
+
+R version 4.0.3 (2020-10-10), running under Windows 10 x64 (build 19044), was used to generate this document.
+
+### Read and prepare data
+
+``` {r}
+# read data
+data <- read.csv("data_final.csv")
+
+#### Data Preparation ####
+
+# convert amplitudes in numeric variable
+data$n1average <- as.numeric(data$n1average) 
+data$p2average <- as.numeric(data$p2average)
+
+# add readable condition labels
+data$condition_notes <- ifelse(data$condition == "actamc", "ACT Execution",
+                               ifelse(data$condition == "imaamc", "ACT Imagery",
+                                      ifelse(data$condition=="obsamc", "ACT Observation",
+                                             ifelse(data$condition=="aoc", "EXT Uncued",
+                                                    "EXT Cued")))) 
+
+# convert variable to factor
+data$condition_effect <- as.factor(data$condition_notes)
+# code contrast with reference level aoc (uncued external sounds)
+contrasts(data$condition_effect) <- contr.treatment(5, base=5)
+
+```
+
+
+### N1 Analysis
+``` {r}
+
+# linear mixed-effects model for n1 amplitude data
+n1_model <- lmer(n1average ~ condition_effect + 
+                   (1 + condition_effect |id),
+                 data=data, REML=T,
+                 control = lmerControl(optimizer="bobyqa"))
+summary(n1_model)
+
+# follow-up tests to compare attenuation magnitude between the motor-related
+# conditions and cued external sounds condition
+n1mmeans <- emmeans::emmeans(n1_model, ~ condition_effect, CIs = TRUE, 
+                             cov.reduce = range, lmer.df="asymp", adj="bonf", infer=T)
+pairs(pairs(n1mmeans, simple = "condition_effect"), by = NULL, adj="none")
+
+# basic plot for first visualization
+emmeans::emmip(n1_model, ~ condition_effect, CIs = TRUE, cov.reduce = range,
+               lmer.df="asymp", style="factor")
+
+#### Create plot (matching colours of grand average plot) ####
+
+# Using ggpredict to create predicted values with confidence intervals for the
+# effect of condition
+plotdata <- ggeffects::ggpredict(n1_model, terms = "condition_effect")
+plotdata <- as.data.frame(plotdata) # convert to data frame
+print(head(plotdata))
+
+# define colors
+point_colors <- 3:7
+
+# open PNG
+png(filename = "plots/N1_condition_effect_color.png", width = 5.5, height = 4, units = "in", res = 400)
+par(mgp=c(1.95,.65,0.65)) 
+
+plot(1:length(plotdata$x), plotdata$predicted,  
+     type = "p", col = point_colors, pch = 16, xlab = "", ylab = expression("Predicted N1 amplitudes in "* mu*V),
+     ylim = c(-2,-6), yaxt = "n", xaxt = "n", main = "", bty = "n")
+
+# add x-axis
+axis(1, at = 1:length(plotdata$x), 
+     labels = c(" \n Execution", " \n Imagery", " \n Observation", "Cued\n Sound",
+                "Sound-\n Only"), col.axis = "black",
+     mgp=c(0,1.5,.25))
+
+# adding error bars for confidence intervals
+for (i in 1:length(plotdata$x)) {
+  arrows(i, plotdata$conf.low[i],
+         i, plotdata$conf.high[i],
+         angle = 90, code = 3, length = 0.1, col = point_colors[i])
+}
+
+# add y-axis
+axis(2, at = seq(-6, -2, by = 1), las = 1, col.axis = "black")
+
+# add some dotted lines for orientation
+abline(h = seq(-6, -2, by = 0.5), col = "gray", lty = "dotted")
+
+# Close PNG device
+dev.off()
+
+#### Create plot (matching colours of grand average plot) WITHOUT CUE ####
+
+# Using ggpredict to create predicted values with confidence intervals for the
+# effect of condition
+plotdata <- ggeffects::ggpredict(n1_model, terms = "condition_effect")
+plotdata <- as.data.frame(plotdata) # convert to data frame
+plotdata <- plotdata[-4,]
+print(plotdata)
+
+# define colors
+point_colors <- c(3:5,7)
+
+# open PNG
+png(filename = "plots/N1_condition_effect_color_without_cue.png", width = 5.5, height = 4, units = "in", res = 400)
+par(mgp=c(1.95,.65,0.65)) 
+
+plot(1:4, plotdata$predicted,  
+     type = "p", col = point_colors, pch = 16, xlab = "", ylab = expression("Predicted N1 amplitudes in "* mu*V),
+     ylim = c(-2,-6), yaxt = "n", xaxt = "n", main = "", bty = "n")
+
+# add x-axis
+axis(1, at = 1:4, 
+     labels =c(" \n Execution", " \n Imagery", " \n Observation",
+               "Sound-\n Only"), col.axis = "black",
+     mgp=c(0,1.5,.25))
+
+# adding error bars for confidence intervals
+for (i in 1:4) {
+  arrows(i, plotdata$conf.low[i],
+         i, plotdata$conf.high[i],
+         angle = 90, code = 3, length = 0.1, col = point_colors[i])
+}
+
+# add y-axis
+axis(2, at = seq(-6, -2, by = 1), las = 1, col.axis = "black")
+
+# add some dotted lines for orientation
+abline(h = seq(-6, -2, by = 0.5), col = "gray", lty = "dotted")
+
+# Close PNG device
+dev.off()
+
+#### Create plot to visualize differences in attenuation magnitude (quick and dirty)
+sjPlot::plot_model(n1_model, vline.color = 7, show.values = TRUE,
+                 axis.labels=rev(c("Execution", "Imagery", "Observation", "Cued Sound")))
+```
+![](plots/N1_condition_effect_color.png)
+### P2 Analysis
+``` {r}
+# linear mixed-effects model for P2 amplitude data
+p2_model <- lmer(p2average ~ condition_effect + 
+                   (1 + condition_effect |id),
+                 data=data, REML=T,
+                 control = lmerControl(optimizer="bobyqa"))
+summary(p2_model)
+
+# follow-up tests to compare attenuation between conditions
+p2mmeans <- emmeans::emmeans(p2_model, ~ condition_effect, CIs = TRUE, 
+                             cov.reduce = range, lmer.df="asymp", adj="bonf", infer=T)
+pairs(pairs(p2mmeans, simple = "condition_effect"), by = NULL, adj="none")
+
+# basic plot for first visualization
+emmeans::emmip(p2_model, ~ condition_effect, CIs = TRUE, cov.reduce = range,
+               lmer.df="asymp", style="factor")
+
+
+#### Create P2 Plot ####
+
+# Using ggpredict to create predicted values with confidence intervals for the
+# effect of condition
+plotdata <- ggeffects::ggpredict(p2_model, terms = "condition_effect")
+plotdata <- as.data.frame(plotdata)
+
+# define colors
+point_colors <- 3:7
+
+# open png
+png(filename = "plots/P2_condition_effect_color.png", width = 5.5, height = 4, units = "in", res = 400)
+par(mgp=c(1.95,.65,0.65))
+
+plot(1:length(plotdata$x), plotdata$predicted,  
+     type = "p", col = point_colors, pch = 16, xlab = "", ylab = expression("Predicted P2 amplitudes in "* mu*V),
+     ylim = c(6,0), yaxt = "n", xaxt = "n",  main = "", bty = "n")
+
+# add x-axis
+axis(1, at = 1:length(plotdata$x), 
+     labels =c(" \n Execution", " \n Imagery", " \n Observation", "Cued\n Sound",
+                "Sound-\n Only"), col.axis = "black",
+     mgp=c(0,1.5,.25))
+
+# adding error bars for confidence intervals
+for (i in 1:length(plotdata$x)) {
+  arrows(i, plotdata$conf.low[i],
+         i, plotdata$conf.high[i],
+         angle = 90, code = 3, length = 0.1, col = point_colors[i])
+}
+
+# add y-axis
+axis(2, at = seq(0,6, by = 1), las = 1, col.axis = "black")
+
+# add dotted lines for orientation
+abline(h = seq(0, 6, by = 1), col = "gray", lty = "dotted")
+
+# close device
+dev.off()
+
+#### Create P2 Plot without cue condition ####
+
+# Using ggpredict to create predicted values with confidence intervals for the
+# effect of condition
+plotdata <- ggeffects::ggpredict(p2_model, terms = "condition_effect")
+plotdata <- as.data.frame(plotdata)
+plotdata <- plotdata[-4,]
+print(plotdata)
+
+# define colors
+point_colors <- c(3:5,7)
+
+# open png
+png(filename = "plots/P2_condition_effect_color_without_cue.png", width = 5.5, height = 4, units = "in", res = 400)
+par(mgp=c(1.95,.65,0.65))
+
+plot(1:4, plotdata$predicted,  
+     type = "p", col = point_colors, pch = 16, xlab = "", ylab = expression("Predicted P2 amplitudes in "* mu*V),
+     ylim = c(6,0), yaxt = "n", xaxt = "n",  main = "", bty = "n")
+
+# add x-axis
+axis(1, at = 1:4, 
+     labels = c(" \n Execution", " \n Imagery", " \n Observation", "Sound-\n Only"), col.axis = "black",
+     mgp=c(0,1.5,.25))
+
+# adding error bars for confidence intervals
+for (i in 1:4) {
+  arrows(i, plotdata$conf.low[i],
+         i, plotdata$conf.high[i],
+         angle = 90, code = 3, length = 0.1, col = point_colors[i])
+}
+
+# add y-axis
+axis(2, at = seq(0,6, by = 1), las = 1, col.axis = "black")
+
+# add dotted lines for orientation
+abline(h = seq(0, 6, by = 1), col = "gray", lty = "dotted")
+
+# close device
+dev.off()
+
+
+
+```
+![](plots/P2_condition_effect_color.png)
+
+
+
+
+
